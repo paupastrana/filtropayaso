@@ -93,8 +93,10 @@
     const startBtn = document.getElementById("start-btn");
 
     let particles = [];
+    let audioCtx = null;
+    let lastMouthState = false; // Control para que el sonido suene una vez por apertura
 
-    // Inicializar modelo de MediaPipe al cargar la página
+    // Inicializar modelo de MediaPipe
     async function initFaceLandmarker() {
       try {
         statusDiv.innerText = "Cargando modelo de rostro...";
@@ -117,9 +119,12 @@
       }
     }
 
-    // Arrancar la cámara al hacer clic en el botón (Requisito estricto de iOS Safari)
+    // Activar audio y cámara al pulsar el botón (Requerido por iOS Safari)
     startBtn.addEventListener("click", async () => {
-      startBtn.style.display = "none"; // Ocultar botón
+      // Inicializar contexto de audio por interacción del usuario
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+      startBtn.style.display = "none";
       statusDiv.innerText = "Solicitando cámara...";
 
       try {
@@ -134,7 +139,7 @@
       } catch (err) {
         console.error("Error al acceder a la cámara:", err);
         statusDiv.innerText = "Permiso de cámara denegado";
-        startBtn.style.display = "block"; // Volver a mostrar si falla
+        startBtn.style.display = "block";
       }
     });
 
@@ -159,6 +164,13 @@
           const mouthDistance = Math.hypot(topLip.x - bottomLip.x, topLip.y - bottomLip.y);
           const isMouthOpen = mouthDistance > 0.05;
 
+          // Si acaba de abrir la boca, reproducir sonido y generar partículas
+          if (isMouthOpen && !lastMouthState) {
+            playClownSound();
+            createMouthParticles(landmarks[13].x * canvasElement.width, landmarks[13].y * canvasElement.height);
+          }
+          lastMouthState = isMouthOpen;
+
           drawCustomMask(landmarks, isMouthOpen);
 
           if (isMouthOpen) {
@@ -176,40 +188,34 @@
       const h = canvasElement.height;
 
       const noseTip = landmarks[1];
-      const leftCheek = landmarks[234];
-      const rightCheek = landmarks[454];
       const leftEye = landmarks[159];
       const rightEye = landmarks[386];
       const leftEyeBottom = landmarks[145];
       const rightEyeBottom = landmarks[374];
 
-      const blushColor = isMouthOpen ? "#FF4081" : "#FF8A80";
-
-      // Chapitas sutiles
-      canvasCtx.fillStyle = blushColor + "99";
-      canvasCtx.beginPath();
-      canvasCtx.arc(leftCheek.x * w + 10, leftCheek.y * h, 12, 0, Math.PI * 2);
-      canvasCtx.arc(rightCheek.x * w - 15, rightCheek.y * h, 12, 0, Math.PI * 2);
-      canvasCtx.fill();
-
-      // Nariz de payasito
+      // 1. NARIZ DE PAYASITO BRILLANTE
       const noseRadius = isMouthOpen ? 18 : 15;
       canvasCtx.fillStyle = "#FF1744";
       canvasCtx.beginPath();
       canvasCtx.arc(noseTip.x * w, noseTip.y * h, noseRadius, 0, Math.PI * 2);
       canvasCtx.fill();
 
+      // Brillo blanco en la nariz
       canvasCtx.fillStyle = "#FFFFFF";
       canvasCtx.beginPath();
       canvasCtx.arc(noseTip.x * w - 4, noseTip.y * h - 4, noseRadius * 0.3, 0, Math.PI * 2);
       canvasCtx.fill();
 
-      // Triángulos ojos
-      drawTriangle(leftEye.x * w, leftEye.y * h - 22, 12, 16, "up", "#00E5FF");
-      drawTriangle(rightEye.x * w, rightEye.y * h - 22, 12, 16, "up", "#00E5FF");
-      drawTriangle(leftEyeBottom.x * w, leftEyeBottom.y * h + 18, 10, 14, "down", "#FFD700");
-      drawTriangle(rightEyeBottom.x * w, rightEyeBottom.y * h + 18, 10, 14, "down", "#FFD700");
+      // 2. TRIÁNGULOS MÁS ANCHOS ARRIBA Y ABAJO DE LOS OJOS
+      // Triángulos superiores más anchos (ancho: 20, alto: 18)
+      drawTriangle(leftEye.x * w, leftEye.y * h - 22, 20, 18, "up", "#00E5FF");
+      drawTriangle(rightEye.x * w, rightEye.y * h - 22, 20, 18, "up", "#00E5FF");
 
+      // Triángulos inferiores invertidos más anchos (ancho: 18, alto: 16)
+      drawTriangle(leftEyeBottom.x * w, leftEyeBottom.y * h + 18, 18, 16, "down", "#FFD700");
+      drawTriangle(rightEyeBottom.x * w, rightEyeBottom.y * h + 18, 18, 16, "down", "#FFD700");
+
+      // 3. SOMBRERITO DE PAYASO FLOTANTE
       const headTop = landmarks[10];
       drawClownHat(headTop.x * w, headTop.y * h - 40, isMouthOpen);
     }
@@ -251,6 +257,30 @@
       canvasCtx.arc(0, -40, 10, 0, Math.PI * 2);
       canvasCtx.fill();
       canvasCtx.restore();
+    }
+
+    // Sintetizador de sonido alegre (Bocina de payaso virtual)
+    function playClownSound() {
+      if (!audioCtx) return;
+      try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(440, audioCtx.currentTime); // Nota La
+        osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.15); // Sube alegremente
+
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.2);
+      } catch (e) {
+        console.log("Audio bloqueado temporalmente", e);
+      }
     }
 
     function createMouthParticles(x, y) {
