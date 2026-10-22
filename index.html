@@ -94,9 +94,8 @@
 
     let particles = [];
     let audioCtx = null;
-    let lastMouthState = false; // Control para que el sonido suene una vez por apertura
+    let lastMouthState = false;
 
-    // Inicializar modelo de MediaPipe
     async function initFaceLandmarker() {
       try {
         statusDiv.innerText = "Cargando modelo de rostro...";
@@ -119,9 +118,7 @@
       }
     }
 
-    // Activar audio y cámara al pulsar el botón (Requerido por iOS Safari)
     startBtn.addEventListener("click", async () => {
-      // Inicializar contexto de audio por interacción del usuario
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
       startBtn.style.display = "none";
@@ -158,13 +155,11 @@
         if (results.faceLandmarks && results.faceLandmarks.length > 0) {
           const landmarks = results.faceLandmarks[0];
           
-          // Detección de apertura de boca
           const topLip = landmarks[13];
           const bottomLip = landmarks[14];
           const mouthDistance = Math.hypot(topLip.x - bottomLip.x, topLip.y - bottomLip.y);
           const isMouthOpen = mouthDistance > 0.05;
 
-          // Si acaba de abrir la boca, reproducir sonido y generar partículas
           if (isMouthOpen && !lastMouthState) {
             playClownSound();
             createMouthParticles(landmarks[13].x * canvasElement.width, landmarks[13].y * canvasElement.height);
@@ -206,14 +201,14 @@
       canvasCtx.arc(noseTip.x * w - 4, noseTip.y * h - 4, noseRadius * 0.3, 0, Math.PI * 2);
       canvasCtx.fill();
 
-      // 2. TRIÁNGULOS MÁS ANCHOS ARRIBA Y ABAJO DE LOS OJOS
-      // Triángulos superiores más anchos (ancho: 30, alto: 18)
-      drawTriangle(leftEye.x * w, leftEye.y * h - 22, 45, 50, "up", "#00E5FF");
-      drawTriangle(rightEye.x * w, rightEye.y * h - 22, 45, 50, "up", "#00E5FF");
+      // 2. TRIÁNGULOS GRANDES CON MAYOR SEPARACIÓN
+      // Alejamos los superiores subiendo la distancia a -45px (en lugar de -22px)
+      drawTriangle(leftEye.x * w, leftEye.y * h - 45, 45, 50, "up", "#00E5FF");
+      drawTriangle(rightEye.x * w, rightEye.y * h - 45, 45, 50, "up", "#00E5FF");
 
-      // Triángulos inferiores invertidos más anchos (ancho: 20, alto: 16)
-      drawTriangle(leftEyeBottom.x * w, leftEyeBottom.y * h + 18, 45, 50, "down", "#FFD700");
-      drawTriangle(rightEyeBottom.x * w, rightEyeBottom.y * h + 18, 45, 50, "down", "#FFD700");
+      // Alejamos los inferiores bajando la distancia a +45px (en lugar de +18px)
+      drawTriangle(leftEyeBottom.x * w, leftEyeBottom.y * h + 45, 45, 50, "down", "#FFD700");
+      drawTriangle(rightEyeBottom.x * w, rightEyeBottom.y * h + 45, 45, 50, "down", "#FFD700");
 
       // 3. SOMBRERITO DE PAYASO FLOTANTE
       const headTop = landmarks[10];
@@ -224,11 +219,11 @@
       canvasCtx.fillStyle = color;
       canvasCtx.beginPath();
       if (direction === "up") {
-        canvasCtx.moveTo(x, y - height);
+        canvasCtx.moveTo(x, y - height / 2);
         canvasCtx.lineTo(x - width / 2, y + height / 2);
         canvasCtx.lineTo(x + width / 2, y + height / 2);
       } else {
-        canvasCtx.moveTo(x, y + height);
+        canvasCtx.moveTo(x, y + height / 2);
         canvasCtx.lineTo(x - width / 2, y - height / 2);
         canvasCtx.lineTo(x + width / 2, y - height / 2);
       }
@@ -259,16 +254,14 @@
       canvasCtx.restore();
     }
 
-    // Sintetizador de sonido alegre (Bocina de payaso virtual)
     function playClownSound() {
       if (!audioCtx) return;
       try {
-        // Doble pitido rápido (Honk-Honk de payaso)
         [0, 0.12].forEach(delay => {
           const osc = audioCtx.createOscillator();
           const gain = audioCtx.createGain();
           
-          osc.type = 'sawtooth'; // Sonido más brillante y de tipo bocina
+          osc.type = 'sawtooth';
           osc.frequency.setValueAtTime(300, audioCtx.currentTime + delay);
           osc.frequency.linearRampToValueAtTime(350, audioCtx.currentTime + delay + 0.08);
 
