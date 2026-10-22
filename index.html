@@ -24,10 +24,11 @@
       width: 640px;
       height: 480px;
       max-width: 100vw;
-      max-height: 80vh;
+      max-height: 70vh;
       box-shadow: 0 10px 25px rgba(0,0,0,0.5);
       border-radius: 12px;
       overflow: hidden;
+      background: #000;
     }
 
     video, canvas {
@@ -36,6 +37,7 @@
       left: 0;
       width: 100%;
       height: 100%;
+      object-fit: cover;
       transform: scaleX(-1); /* Efecto espejo */
     }
 
@@ -49,17 +51,36 @@
       font-size: 14px;
       z-index: 10;
     }
+
+    #start-btn {
+      margin-top: 15px;
+      padding: 12px 24px;
+      background-color: #FF4081;
+      color: white;
+      border: none;
+      border-radius: 25px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(255, 64, 129, 0.4);
+      z-index: 20;
+    }
+
+    #start-btn:active {
+      transform: scale(0.95);
+    }
   </style>
 </head>
 <body>
 
   <div id="container">
-    <div id="status">Cargando modelo de rostro...</div>
-    <video id="webcam" autoplay playsinline></video>
+    <div id="status">Esperando inicio...</div>
+    <video id="webcam" autoplay playsinline muted></video>
     <canvas id="output_canvas"></canvas>
   </div>
 
-  <!-- Usamos type="module" para importar correctamente MediaPipe -->
+  <button id="start-btn">¡Activar Filtro y Cámara!</button>
+
   <script type="module">
     import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs";
 
@@ -69,11 +90,14 @@
     const canvasElement = document.getElementById("output_canvas");
     const canvasCtx = canvasElement.getContext("2d");
     const statusDiv = document.getElementById("status");
+    const startBtn = document.getElementById("start-btn");
 
     let particles = [];
 
+    // Inicializar modelo de MediaPipe al cargar la página
     async function initFaceLandmarker() {
       try {
+        statusDiv.innerText = "Cargando modelo de rostro...";
         const filesetResolver = await FilesetResolver.forVisionTasks(
           "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
         );
@@ -86,32 +110,42 @@
           runningMode: runningMode,
           numFaces: 1
         });
-        statusDiv.innerText = "Cámara lista. Muestra tu rostro";
-        startCamera();
+        statusDiv.innerText = "Listo para iniciar";
       } catch (error) {
         console.error("Error al inicializar MediaPipe:", error);
-        statusDiv.innerText = "Error al cargar el modelo";
+        statusDiv.innerText = "Error al cargar modelo";
       }
     }
 
-    function startCamera() {
-      navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } })
-        .then((stream) => {
-          video.srcObject = stream;
-          video.addEventListener("loadeddata", predictWebcam);
-        })
-        .catch((err) => {
-          console.error("Error al acceder a la cámara:", err);
-          statusDiv.innerText = "Permiso de cámara denegado o no disponible";
+    // Arrancar la cámara al hacer clic en el botón (Requisito estricto de iOS Safari)
+    startBtn.addEventListener("click", async () => {
+      startBtn.style.display = "none"; // Ocultar botón
+      statusDiv.innerText = "Solicitando cámara...";
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } } 
         });
-    }
+        video.srcObject = stream;
+        video.addEventListener("loadeddata", () => {
+          statusDiv.innerText = "¡Filtro activo!";
+          predictWebcam();
+        });
+      } catch (err) {
+        console.error("Error al acceder a la cámara:", err);
+        statusDiv.innerText = "Permiso de cámara denegado";
+        startBtn.style.display = "block"; // Volver a mostrar si falla
+      }
+    });
 
     async function predictWebcam() {
-      canvasElement.width = video.videoWidth;
-      canvasElement.height = video.videoHeight;
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        canvasElement.width = video.videoWidth;
+        canvasElement.height = video.videoHeight;
+      }
 
       let startTimeMs = performance.now();
-      if (faceLandmarker) {
+      if (faceLandmarker && video.readyState >= 2) {
         const results = faceLandmarker.detectForVideo(video, startTimeMs);
 
         canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
@@ -119,11 +153,10 @@
         if (results.faceLandmarks && results.faceLandmarks.length > 0) {
           const landmarks = results.faceLandmarks[0];
           
-          // Distancia entre labios para detectar si abre la boca
+          // Detección de apertura de boca
           const topLip = landmarks[13];
           const bottomLip = landmarks[14];
           const mouthDistance = Math.hypot(topLip.x - bottomLip.x, topLip.y - bottomLip.y);
-          
           const isMouthOpen = mouthDistance > 0.05;
 
           drawCustomMask(landmarks, isMouthOpen);
@@ -137,85 +170,74 @@
       updateAndDrawParticles();
       window.requestAnimationFrame(predictWebcam);
     }
+
     function drawCustomMask(landmarks, isMouthOpen) {
       const w = canvasElement.width;
       const h = canvasElement.height;
 
-      // Puntos clave de MediaPipe
-      const noseTip = landmarks[1];         // Punta de la nariz
-      const leftCheek = landmarks[234];     // Cachete izquierdo
-      const rightCheek = landmarks[454];   // Cachete derecho
-      const leftEye = landmarks[159];       // Arriba ojo izquierdo
-      const rightEye = landmarks[386];      // Arriba ojo derecho
-      const leftEyeBottom = landmarks[145]; // Abajo ojo izquierdo
-      const rightEyeBottom = landmarks[374];// Abajo ojo tercero/derecho
+      const noseTip = landmarks[1];
+      const leftCheek = landmarks[234];
+      const rightCheek = landmarks[454];
+      const leftEye = landmarks[159];
+      const rightEye = landmarks[386];
+      const leftEyeBottom = landmarks[145];
+      const rightEyeBottom = landmarks[374];
 
-      // Color reactivo al gesto (abrir la boca)
       const blushColor = isMouthOpen ? "#FF4081" : "#FF8A80";
 
-      // 1. CHAPITAS MÁS CHIQUITAS Y DELICADAS
-      canvasCtx.fillStyle = blushColor + "99"; // Semitransparente
+      // Chapitas sutiles
+      canvasCtx.fillStyle = blushColor + "99";
       canvasCtx.beginPath();
       canvasCtx.arc(leftCheek.x * w + 10, leftCheek.y * h, 12, 0, Math.PI * 2);
-      canvasCtx.arc(rightCheek.x * w - 10, rightCheek.y * h, 12, 0, Math.PI * 2);
+      canvasCtx.arc(rightCheek.x * w - 15, rightCheek.y * h, 12, 0, Math.PI * 2);
       canvasCtx.fill();
 
-      // 2. NARIZ DE PAYASITO BRILLANTE
-      const noseRadius = isMouthOpen ? 18 : 15; // Crece un poco al abrir la boca
+      // Nariz de payasito
+      const noseRadius = isMouthOpen ? 18 : 15;
       canvasCtx.fillStyle = "#FF1744";
       canvasCtx.beginPath();
       canvasCtx.arc(noseTip.x * w, noseTip.y * h, noseRadius, 0, Math.PI * 2);
       canvasCtx.fill();
 
-      // Brillo blanco en la nariz
       canvasCtx.fillStyle = "#FFFFFF";
       canvasCtx.beginPath();
       canvasCtx.arc(noseTip.x * w - 4, noseTip.y * h - 4, noseRadius * 0.3, 0, Math.PI * 2);
       canvasCtx.fill();
 
-      // 3. TRIÁNGULOS ARRIBA Y ABAJO DE LOS OJOS
-      // Triángulos superiores (apuntando hacia arriba)
+      // Triángulos ojos
       drawTriangle(leftEye.x * w, leftEye.y * h - 22, 12, 16, "up", "#00E5FF");
       drawTriangle(rightEye.x * w, rightEye.y * h - 22, 12, 16, "up", "#00E5FF");
+      drawTriangle(leftEyeBottom.x * w, leftEyeBottom.y * h + 18, 10, 14, "down", "#FFD700");
+      drawTriangle(rightEyeBottom.x * w, rightEyeBottom.y * h + 18, 10, 14, "down", "#FFD700");
 
-      // Triángulos inferiores (invertidos, apuntando hacia abajo)
-      drawTriangle(leftEyeBottom.x * w, leftEyeBottom.y * h + 18, 10, 14, "down", "#00E5FF");
-      drawTriangle(rightEyeBottom.x * w, rightEyeBottom.y * h + 18, 10, 14, "down", "#00E5FF");
-
-      // 4. SOMBRERITO DE PAYASO FLOTANTE
       const headTop = landmarks[10];
       drawClownHat(headTop.x * w, headTop.y * h - 40, isMouthOpen);
     }
 
-    // Función auxiliar para dibujar triángulos hacia arriba o hacia abajo
     function drawTriangle(x, y, width, height, direction, color) {
       canvasCtx.fillStyle = color;
       canvasCtx.beginPath();
       if (direction === "up") {
-        canvasCtx.moveTo(x, y - height); // Punta superior
-        canvasCtx.lineTo(x - width / 2, y + height / 2); // Esquina izq
-        canvasCtx.lineTo(x + width / 2, y + height / 2); // Esquina der
+        canvasCtx.moveTo(x, y - height);
+        canvasCtx.lineTo(x - width / 2, y + height / 2);
+        canvasCtx.lineTo(x + width / 2, y + height / 2);
       } else {
-        canvasCtx.moveTo(x, y + height); // Punta inferior (invertido)
-        canvasCtx.lineTo(x - width / 2, y - height / 2); // Esquina izq
-        canvasCtx.lineTo(x + width / 2, y - height / 2); // Esquina der
+        canvasCtx.moveTo(x, y + height);
+        canvasCtx.lineTo(x - width / 2, y - height / 2);
+        canvasCtx.lineTo(x + width / 2, y - height / 2);
       }
       canvasCtx.closePath();
       canvasCtx.fill();
     }
 
-    // Función auxiliar para dibujar el sombrerito
     function drawClownHat(x, y, isOpen) {
       canvasCtx.save();
       canvasCtx.translate(x, y);
-
-      // Base del sombrero
       canvasCtx.fillStyle = isOpen ? "#FFD700" : "#AA00FF";
       canvasCtx.beginPath();
       canvasCtx.ellipse(0, 10, 35, 8, 0, 0, Math.PI * 2);
       canvasCtx.fill();
 
-      // Copa del sombrero
       canvasCtx.beginPath();
       canvasCtx.moveTo(-20, 10);
       canvasCtx.lineTo(-12, -35);
@@ -224,19 +246,13 @@
       canvasCtx.closePath();
       canvasCtx.fill();
 
-      // Pompón arriba del sombrero
       canvasCtx.fillStyle = "#FF4081";
       canvasCtx.beginPath();
       canvasCtx.arc(0, -40, 10, 0, Math.PI * 2);
       canvasCtx.fill();
-
       canvasCtx.restore();
     }
 
-
-   
-
-  
     function createMouthParticles(x, y) {
       for (let i = 0; i < 3; i++) {
         particles.push({
