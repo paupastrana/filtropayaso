@@ -79,7 +79,7 @@
     <canvas id="output_canvas"></canvas>
   </div>
 
-  <button id="start-btn">¡Activar Filtro y Cámara!</button>
+  <button id="start-btn">¡Activar Cámara!</button>
 
   <script type="module">
     import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs";
@@ -182,14 +182,22 @@
       const w = canvasElement.width;
       const h = canvasElement.height;
 
+      // CALCULAR ESCALA DINÁMICA BASADA EN EL ANCHO DE LA CARA
+      const leftCheek = landmarks[234];
+      const rightCheek = landmarks[454];
+      const faceWidth = Math.hypot((rightCheek.x - leftCheek.x) * w, (rightCheek.y - leftCheek.y) * h);
+      
+      // Factor de escala proporcional (tomando como base un ancho de referencia de 250 píxeles)
+      const scale = faceWidth / 250;
+
       const noseTip = landmarks[1];
       const leftEye = landmarks[159];
       const rightEye = landmarks[386];
       const leftEyeBottom = landmarks[145];
       const rightEyeBottom = landmarks[374];
 
-      // 1. NARIZ DE PAYASITO BRILLANTE
-      const noseRadius = isMouthOpen ? 35 : 30;
+      // 1. NARIZ DE PAYASITO ESCALADA
+      const noseRadius = (isMouthOpen ? 24 : 20) * scale;
       canvasCtx.fillStyle = "#FF1744";
       canvasCtx.beginPath();
       canvasCtx.arc(noseTip.x * w, noseTip.y * h, noseRadius, 0, Math.PI * 2);
@@ -198,21 +206,22 @@
       // Brillo blanco en la nariz
       canvasCtx.fillStyle = "#FFFFFF";
       canvasCtx.beginPath();
-      canvasCtx.arc(noseTip.x * w - 4, noseTip.y * h - 4, noseRadius * 0.3, 0, Math.PI * 2);
+      canvasCtx.arc(noseTip.x * w - (4 * scale), noseTip.y * h - (4 * scale), noseRadius * 0.3, 0, Math.PI * 2);
       canvasCtx.fill();
 
-      // 2. TRIÁNGULOS GRANDES CON MAYOR SEPARACIÓN
-      // Alejamos los superiores subiendo la distancia a -45px (en lugar de -22px)
-      drawTriangle(leftEye.x * w, leftEye.y * h - 45, 45, 50, "up", "#00E5FF");
-      drawTriangle(rightEye.x * w, rightEye.y * h - 45, 45, 50, "up", "#00E5FF");
+      // 2. TRIÁNGULOS ESCALADOS AUTOMÁTICAMENTE
+      const triWidth = 35 * scale;
+      const triHeight = 40 * scale;
 
-      // Alejamos los inferiores bajando la distancia a +45px (en lugar de +18px)
-      drawTriangle(leftEyeBottom.x * w, leftEyeBottom.y * h + 45, 45, 50, "down", "#FFD700");
-      drawTriangle(rightEyeBottom.x * w, rightEyeBottom.y * h + 45, 45, 50, "down", "#FFD700");
+      drawTriangle(leftEye.x * w, leftEye.y * h - (35 * scale), triWidth, triHeight, "up", "#00E5FF");
+      drawTriangle(rightEye.x * w, rightEye.y * h - (35 * scale), triWidth, triHeight, "up", "#00E5FF");
 
-      // 3. SOMBRERITO DE PAYASO FLOTANTE
+      drawTriangle(leftEyeBottom.x * w, leftEyeBottom.y * h + (35 * scale), triWidth, triHeight, "down", "#FFD700");
+      drawTriangle(rightEyeBottom.x * w, rightEyeBottom.y * h + (35 * scale), triWidth, triHeight, "down", "#FFD700");
+
+      // 3. SOMBRERITO DE PAYASO ESCALADO
       const headTop = landmarks[10];
-      drawClownHat(headTop.x * w, headTop.y * h - 40, isMouthOpen);
+      drawClownHat(headTop.x * w, headTop.y * h - (30 * scale), isMouthOpen, scale);
     }
 
     function drawTriangle(x, y, width, height, direction, color) {
@@ -231,9 +240,11 @@
       canvasCtx.fill();
     }
 
-    function drawClownHat(x, y, isOpen) {
+    function drawClownHat(x, y, isOpen, scale) {
       canvasCtx.save();
       canvasCtx.translate(x, y);
+      canvasCtx.scale(scale, scale); // Escalar todo el sombrero proporcionalmente
+
       canvasCtx.fillStyle = isOpen ? "#FFD700" : "#AA00FF";
       canvasCtx.beginPath();
       canvasCtx.ellipse(0, 10, 35, 8, 0, 0, Math.PI * 2);
