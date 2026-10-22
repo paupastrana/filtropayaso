@@ -194,7 +194,7 @@
       const rightEyeBottom = landmarks[374];
 
       // 1. NARIZ DE PAYASITO BRILLANTE
-      const noseRadius = isMouthOpen ? 18 : 15;
+      const noseRadius = isMouthOpen ? 35 : 30;
       canvasCtx.fillStyle = "#FF1744";
       canvasCtx.beginPath();
       canvasCtx.arc(noseTip.x * w, noseTip.y * h, noseRadius, 0, Math.PI * 2);
@@ -208,12 +208,12 @@
 
       // 2. TRIÁNGULOS MÁS ANCHOS ARRIBA Y ABAJO DE LOS OJOS
       // Triángulos superiores más anchos (ancho: 30, alto: 18)
-      drawTriangle(leftEye.x * w, leftEye.y * h - 22, 50, 55, "up", "#00E5FF");
-      drawTriangle(rightEye.x * w, rightEye.y * h - 22, 50, 55, "up", "#00E5FF");
+      drawTriangle(leftEye.x * w, leftEye.y * h - 22, 45, 50, "up", "#00E5FF");
+      drawTriangle(rightEye.x * w, rightEye.y * h - 22, 45, 50, "up", "#00E5FF");
 
       // Triángulos inferiores invertidos más anchos (ancho: 20, alto: 16)
-      drawTriangle(leftEyeBottom.x * w, leftEyeBottom.y * h + 18, 50, 55, "down", "#FFD700");
-      drawTriangle(rightEyeBottom.x * w, rightEyeBottom.y * h + 18, 50, 55, "down", "#FFD700");
+      drawTriangle(leftEyeBottom.x * w, leftEyeBottom.y * h + 18, 45, 50, "down", "#FFD700");
+      drawTriangle(rightEyeBottom.x * w, rightEyeBottom.y * h + 18, 45, 50, "down", "#FFD700");
 
       // 3. SOMBRERITO DE PAYASO FLOTANTE
       const headTop = landmarks[10];
