@@ -208,12 +208,12 @@
 
       // 2. TRIÁNGULOS MÁS ANCHOS ARRIBA Y ABAJO DE LOS OJOS
       // Triángulos superiores más anchos (ancho: 30, alto: 18)
-      drawTriangle(leftEye.x * w, leftEye.y * h - 22, 30, 18, "up", "#00E5FF");
-      drawTriangle(rightEye.x * w, rightEye.y * h - 22, 30, 18, "up", "#00E5FF");
+      drawTriangle(leftEye.x * w, leftEye.y * h - 22, 50, 55, "up", "#00E5FF");
+      drawTriangle(rightEye.x * w, rightEye.y * h - 22, 50, 55, "up", "#00E5FF");
 
       // Triángulos inferiores invertidos más anchos (ancho: 20, alto: 16)
-      drawTriangle(leftEyeBottom.x * w, leftEyeBottom.y * h + 18, 20, 16, "down", "#FFD700");
-      drawTriangle(rightEyeBottom.x * w, rightEyeBottom.y * h + 18, 20, 16, "down", "#FFD700");
+      drawTriangle(leftEyeBottom.x * w, leftEyeBottom.y * h + 18, 50, 55, "down", "#FFD700");
+      drawTriangle(rightEyeBottom.x * w, rightEyeBottom.y * h + 18, 50, 55, "down", "#FFD700");
 
       // 3. SOMBRERITO DE PAYASO FLOTANTE
       const headTop = landmarks[10];
@@ -263,23 +263,26 @@
     function playClownSound() {
       if (!audioCtx) return;
       try {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(440, audioCtx.currentTime); // Nota La
-        osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.15); // Sube alegremente
+        // Doble pitido rápido (Honk-Honk de payaso)
+        [0, 0.12].forEach(delay => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          
+          osc.type = 'sawtooth'; // Sonido más brillante y de tipo bocina
+          osc.frequency.setValueAtTime(300, audioCtx.currentTime + delay);
+          osc.frequency.linearRampToValueAtTime(350, audioCtx.currentTime + delay + 0.08);
 
-        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+          gain.gain.setValueAtTime(0.2, audioCtx.currentTime + delay);
+          gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + delay + 0.08);
 
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
 
-        osc.start();
-        osc.stop(audioCtx.currentTime + 0.2);
+          osc.start(audioCtx.currentTime + delay);
+          osc.stop(audioCtx.currentTime + delay + 0.08);
+        });
       } catch (e) {
-        console.log("Audio bloqueado temporalmente", e);
+        console.log("Audio bloqueado", e);
       }
     }
 
