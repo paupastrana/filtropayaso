@@ -1,314 +1,312 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Filtro Facial Interactivo RA</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      background-color: #121212;
-      color: #fff;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      overflow: hidden;
-    }
-
-    #container {
-      position: relative;
-      width: 640px;
-      height: 480px;
-      max-width: 100vw;
-      max-height: 70vh;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-      border-radius: 12px;
-      overflow: hidden;
-      background: #000;
-    }
-
-    video, canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      transform: scaleX(-1); /* Efecto espejo */
-    }
-
-    #status {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      background: rgba(0, 0, 0, 0.7);
-      padding: 6px 14px;
-      border-radius: 20px;
-      font-size: 14px;
-      z-index: 10;
-    }
-
-    #start-btn {
-      margin-top: 15px;
-      padding: 12px 24px;
-      background-color: #FF4081;
-      color: white;
-      border: none;
-      border-radius: 25px;
-      font-size: 16px;
-      font-weight: bold;
-      cursor: pointer;
-      box-shadow: 0 4px 15px rgba(255, 64, 129, 0.4);
-      z-index: 20;
-    }
-
-    #start-btn:active {
-      transform: scale(0.95);
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Filtro de Payaso RA</title>
+<style>
+  body{margin:0;background:#15101c;color:#fff;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;overflow:hidden}
+  #container{position:relative;width:640px;height:480px;max-width:100vw;max-height:70vh;border-radius:16px;overflow:hidden;background:#000;box-shadow:0 12px 30px rgba(0,0,0,.55),0 0 0 3px #ff4fa3}
+  video,canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+  #status{position:absolute;top:10px;left:10px;background:rgba(0,0,0,.7);padding:6px 14px;border-radius:20px;font-size:14px;z-index:10}
+  #hint{margin:12px 0 0;font-size:14px;opacity:.75}
+  .row{display:flex;gap:12px;margin-top:12px}
+  button{padding:12px 24px;border:none;border-radius:25px;font-size:16px;font-weight:bold;color:#fff;cursor:pointer;background:#ff4081;box-shadow:0 4px 15px rgba(255,64,129,.4)}
+  button.alt{background:#6a3df0;box-shadow:0 4px 15px rgba(106,61,240,.4)}
+  button:active{transform:scale(.95)}
+  button:focus-visible{outline:3px solid #fff;outline-offset:2px}
+</style>
 </head>
 <body>
+<div id="container">
+  <div id="status">Esperando inicio...</div>
+  <video id="webcam" autoplay playsinline muted></video>
+  <canvas id="output_canvas"></canvas>
+</div>
+<p id="hint">Abre la boca para hacer sonar la bocina y lanzar confeti.</p>
+<div class="row">
+  <button id="start-btn">¡Activar cámara!</button>
+  <button id="snap-btn" class="alt" style="display:none">Tomar foto</button>
+</div>
 
-  <div id="container">
-    <div id="status">Esperando inicio...</div>
-    <video id="webcam" autoplay playsinline muted></video>
-    <canvas id="output_canvas"></canvas>
-  </div>
+<script type="module">
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
 
-  <button id="start-btn">¡Activar Cámara!</button>
+const video = document.getElementById("webcam");
+const cv = document.getElementById("output_canvas");
+const ctx = cv.getContext("2d");
+const statusDiv = document.getElementById("status");
+const startBtn = document.getElementById("start-btn");
+const snapBtn = document.getElementById("snap-btn");
 
-  <script type="module">
-    import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs";
+let faceLandmarker, audioCtx = null;
+let particles = [], lastOpen = false, openness = 0, frame = 0;
+let W = 640, H = 480, F = null; // F = marco local de la cara
 
-    let faceLandmarker;
-    let runningMode = "VIDEO";
-    const video = document.getElementById("webcam");
-    const canvasElement = document.getElementById("output_canvas");
-    const canvasCtx = canvasElement.getContext("2d");
-    const statusDiv = document.getElementById("status");
-    const startBtn = document.getElementById("start-btn");
+const LIPS_OUTER = [61,185,40,39,37,0,267,269,270,409,291,375,321,405,314,17,84,181,91,146];
+const LIPS_INNER = [78,191,80,81,82,13,312,311,310,415,308,324,318,402,317,14,87,178,88,95];
+const CONFETTI = ["#ff4fa3","#00e5ff","#ffd600","#7cff6b","#b388ff","#ff8a3d"];
 
-    let particles = [];
-    let audioCtx = null;
-    let lastMouthState = false;
-
-    async function initFaceLandmarker() {
-      try {
-        statusDiv.innerText = "Cargando modelo de rostro...";
-        const filesetResolver = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-        );
-        faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
-          baseOptions: {
-            modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
-            delegate: "GPU"
-          },
-          outputFaceBlendshapes: true,
-          runningMode: runningMode,
-          numFaces: 1
-        });
-        statusDiv.innerText = "Listo para iniciar";
-      } catch (error) {
-        console.error("Error al inicializar MediaPipe:", error);
-        statusDiv.innerText = "Error al cargar modelo";
-      }
-    }
-
-    startBtn.addEventListener("click", async () => {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-      startBtn.style.display = "none";
-      statusDiv.innerText = "Solicitando cámara...";
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } } 
-        });
-        video.srcObject = stream;
-        video.addEventListener("loadeddata", () => {
-          statusDiv.innerText = "¡Filtro activo!";
-          predictWebcam();
-        });
-      } catch (err) {
-        console.error("Error al acceder a la cámara:", err);
-        statusDiv.innerText = "Permiso de cámara denegado";
-        startBtn.style.display = "block";
-      }
+async function init() {
+  try {
+    statusDiv.innerText = "Cargando modelo de rostro...";
+    const fs = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+    faceLandmarker = await FaceLandmarker.createFromOptions(fs, {
+      baseOptions: {
+        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+        delegate: "GPU"
+      },
+      outputFaceBlendshapes: true,
+      runningMode: "VIDEO",
+      numFaces: 1
     });
+    statusDiv.innerText = "Listo para iniciar";
+  } catch (e) {
+    console.error(e);
+    statusDiv.innerText = "Error al cargar modelo";
+  }
+}
 
-    async function predictWebcam() {
-      if (video.videoWidth > 0 && video.videoHeight > 0) {
-        canvasElement.width = video.videoWidth;
-        canvasElement.height = video.videoHeight;
-      }
+startBtn.addEventListener("click", async () => {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  startBtn.style.display = "none";
+  statusDiv.innerText = "Solicitando cámara...";
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } } });
+    video.srcObject = stream;
+    video.addEventListener("loadeddata", () => {
+      statusDiv.innerText = "¡Filtro activo!";
+      snapBtn.style.display = "block";
+      loop();
+    });
+  } catch (e) {
+    statusDiv.innerText = "Permiso de cámara denegado";
+    startBtn.style.display = "block";
+  }
+});
 
-      let startTimeMs = performance.now();
-      if (faceLandmarker && video.readyState >= 2) {
-        const results = faceLandmarker.detectForVideo(video, startTimeMs);
+snapBtn.addEventListener("click", () => {
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const g = c.getContext("2d");
+  g.translate(W, 0); g.scale(-1, 1);
+  g.drawImage(video, 0, 0, W, H);
+  g.drawImage(cv, 0, 0, W, H);
+  const a = document.createElement("a");
+  a.href = c.toDataURL("image/png");
+  a.download = "payasito.png";
+  a.click();
+});
 
-        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+function loop() {
+  if (video.videoWidth > 0 && (cv.width !== video.videoWidth || cv.height !== video.videoHeight)) {
+    cv.width = W = video.videoWidth;
+    cv.height = H = video.videoHeight;
+  }
+  frame++;
+  ctx.clearRect(0, 0, W, H);
 
-        if (results.faceLandmarks && results.faceLandmarks.length > 0) {
-          const landmarks = results.faceLandmarks[0];
-          
-          const topLip = landmarks[13];
-          const bottomLip = landmarks[14];
-          const mouthDistance = Math.hypot(topLip.x - bottomLip.x, topLip.y - bottomLip.y);
-          const isMouthOpen = mouthDistance > 0.05;
+  if (faceLandmarker && video.readyState >= 2) {
+    const res = faceLandmarker.detectForVideo(video, performance.now());
+    if (res.faceLandmarks && res.faceLandmarks.length) {
+      const lm = res.faceLandmarks[0];
+      let jaw = 0;
+      const cats = res.faceBlendshapes && res.faceBlendshapes[0] && res.faceBlendshapes[0].categories;
+      if (cats) { const j = cats.find(c => c.categoryName === "jawOpen"); if (j) jaw = j.score; }
+      openness += (Math.min(jaw * 2, 1) - openness) * 0.35; // suavizado
+      const isOpen = jaw > 0.3;
 
-          if (isMouthOpen && !lastMouthState) {
-            playClownSound();
-            createMouthParticles(landmarks[13].x * canvasElement.width, landmarks[13].y * canvasElement.height);
-          }
-          lastMouthState = isMouthOpen;
+      setFrame(lm);
+      const mouth = pt(lm[13]);
+      if (isOpen && !lastOpen) { honk(); burst(mouth.x, mouth.y, 45); }
+      if (isOpen && frame % 2 === 0) burst(mouth.x, mouth.y, 3);
+      lastOpen = isOpen;
 
-          drawCustomMask(landmarks, isMouthOpen);
-
-          if (isMouthOpen) {
-            createMouthParticles(landmarks[13].x * canvasElement.width, landmarks[13].y * canvasElement.height);
-          }
-        }
-      }
-
-      updateAndDrawParticles();
-      window.requestAnimationFrame(predictWebcam);
+      drawMask(lm);
     }
+  }
+  drawParticles();
+  requestAnimationFrame(loop);
+}
 
-    function drawCustomMask(landmarks, isMouthOpen) {
-      const w = canvasElement.width;
-      const h = canvasElement.height;
+// ---------- Marco local: origen en la nariz, rotado con la cabeza y escalado al ancho de cara ----------
+function setFrame(lm) {
+  const a = lm[33], b = lm[263], l = lm[234], r = lm[454];
+  const roll = Math.atan2((b.y - a.y) * H, (b.x - a.x) * W);
+  const fw = Math.hypot((r.x - l.x) * W, (r.y - l.y) * H);
+  F = { ox: lm[1].x * W, oy: lm[1].y * H, roll, s: fw / 250, c: Math.cos(roll), sn: Math.sin(roll) };
+}
+const pt = p => ({ x: p.x * W, y: p.y * H });
+function L(p) { // landmark -> coordenadas locales
+  const dx = p.x * W - F.ox, dy = p.y * H - F.oy;
+  return { x: (dx * F.c + dy * F.sn) / F.s, y: (-dx * F.sn + dy * F.c) / F.s };
+}
 
-      // CALCULAR ESCALA DINÁMICA BASADA EN EL ANCHO DE LA CARA
-      const leftCheek = landmarks[234];
-      const rightCheek = landmarks[454];
-      const faceWidth = Math.hypot((rightCheek.x - leftCheek.x) * w, (rightCheek.y - leftCheek.y) * h);
-      
-      // Factor de escala proporcional (tomando como base un ancho de referencia de 250 píxeles)
-      const scale = faceWidth / 250;
+// ---------- Dibujo ----------
+function drawMask(lm) {
+  ctx.save();
+  ctx.translate(F.ox, F.oy);
+  ctx.rotate(F.roll);
+  ctx.scale(F.s, F.s);
 
-      const noseTip = landmarks[1];
-      const leftEye = landmarks[159];
-      const rightEye = landmarks[386];
-      const leftEyeBottom = landmarks[145];
-      const rightEyeBottom = landmarks[374];
+  const t = frame / 12;
+  drawWig(lm, t);
+  drawFacePaint(lm);
+  drawSmile(lm);
+  drawNose(lm);
+  drawHat(lm, t);
 
-      // 1. NARIZ DE PAYASITO ESCALADA
-      const noseRadius = (isMouthOpen ? 24 : 20) * scale;
-      canvasCtx.fillStyle = "#FF1744";
-      canvasCtx.beginPath();
-      canvasCtx.arc(noseTip.x * w, noseTip.y * h, noseRadius, 0, Math.PI * 2);
-      canvasCtx.fill();
+  ctx.restore();
+}
 
-      // Brillo blanco en la nariz
-      canvasCtx.fillStyle = "#FFFFFF";
-      canvasCtx.beginPath();
-      canvasCtx.arc(noseTip.x * w - (4 * scale), noseTip.y * h - (4 * scale), noseRadius * 0.3, 0, Math.PI * 2);
-      canvasCtx.fill();
+function ball(x, y, r, c1, c2) {
+  const g = ctx.createRadialGradient(x - r * .35, y - r * .35, r * .1, x, y, r);
+  g.addColorStop(0, c1); g.addColorStop(1, c2);
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+}
 
-      // 2. TRIÁNGULOS ESCALADOS AUTOMÁTICAMENTE
-      const triWidth = 35 * scale;
-      const triHeight = 40 * scale;
+function drawWig(lm, t) {
+  const top = L(lm[10]);
+  const lt = L(lm[127]), rt = L(lm[356]);
+  const bounce = 1 + openness * 0.18;
+  const offs = [[-14,50],[-34,12],[-40,-30],[-26,-68],[0,-88]];
+  const cols = [["#ffb066","#ff6a00"],["#ff8ab8","#e6177a"]];
+  [[lt,-1],[rt,1]].forEach(([base, side]) => {
+    offs.forEach((o, i) => {
+      const wob = Math.sin(t + i + side) * 2;
+      const r = (34 + (i % 2) * 4) * bounce;
+      const c = cols[i % 2];
+      ball(base.x - side * o[0] + wob, base.y + o[1] + wob, r, c[0], c[1]);
+    });
+  });
+}
 
-      drawTriangle(leftEye.x * w, leftEye.y * h - (35 * scale), triWidth, triHeight, "up", "#00E5FF");
-      drawTriangle(rightEye.x * w, rightEye.y * h - (35 * scale), triWidth, triHeight, "up", "#00E5FF");
+function drawFacePaint(lm) {
+  const eyes = [[159, 145, -1], [386, 374, 1]];
+  eyes.forEach(([up, dn, side]) => {
+    const u = L(lm[up]), d = L(lm[dn]);
+    const cx = (u.x + d.x) / 2, cy = (u.y + d.y) / 2;
+    // triángulo azul sobre el ojo
+    ctx.fillStyle = "#1e88ff"; ctx.strokeStyle = "#0b3d91"; ctx.lineWidth = 3; ctx.lineJoin = "round";
+    ctx.beginPath(); ctx.moveTo(cx, u.y - 62); ctx.lineTo(cx - 22, u.y - 22); ctx.lineTo(cx + 22, u.y - 22); ctx.closePath(); ctx.fill(); ctx.stroke();
+    // rombo dorado bajo el ojo
+    ctx.fillStyle = "#ffd600"; ctx.strokeStyle = "#b8860b"; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(cx, d.y + 12); ctx.lineTo(cx + 13, d.y + 30); ctx.lineTo(cx, d.y + 48); ctx.lineTo(cx - 13, d.y + 30); ctx.closePath(); ctx.fill(); ctx.stroke();
+  });
+  // mejillas
+  [205, 425].forEach(i => {
+    const c = L(lm[i]);
+    const g = ctx.createRadialGradient(c.x, c.y, 2, c.x, c.y, 34);
+    g.addColorStop(0, "rgba(255,40,110,.75)"); g.addColorStop(1, "rgba(255,40,110,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c.x, c.y, 34, 0, Math.PI * 2); ctx.fill();
+  });
+}
 
-      drawTriangle(leftEyeBottom.x * w, leftEyeBottom.y * h + (35 * scale), triWidth, triHeight, "down", "#FFD700");
-      drawTriangle(rightEyeBottom.x * w, rightEyeBottom.y * h + (35 * scale), triWidth, triHeight, "down", "#FFD700");
+function drawSmile(lm) {
+  const poly = idx => { idx.forEach((i, k) => { const p = L(lm[i]); k ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); }); ctx.closePath(); };
+  const c1 = L(lm[61]), c2 = L(lm[291]);
+  // sonrisa pintada que sube hacia las mejillas
+  ctx.strokeStyle = "#e0123f"; ctx.lineWidth = 11; ctx.lineCap = "round";
+  [[c1, -1], [c2, 1]].forEach(([c, s]) => {
+    ctx.beginPath(); ctx.moveTo(c.x, c.y);
+    ctx.quadraticCurveTo(c.x + s * 14, c.y + 2, c.x + s * 30, c.y - 22); ctx.stroke();
+  });
+  // labios con agujero interior (se ve la boca al abrirla)
+  ctx.beginPath(); poly(LIPS_OUTER); poly(LIPS_INNER);
+  ctx.fillStyle = "#e0123f"; ctx.fill("evenodd");
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 2.5; ctx.lineJoin = "round";
+  ctx.beginPath(); poly(LIPS_OUTER); ctx.stroke();
+  // brillo
+  const m = L(lm[0]);
+  ctx.fillStyle = "rgba(255,255,255,.55)";
+  ctx.beginPath(); ctx.ellipse(m.x - 14, m.y + 5, 9, 3, -.15, 0, Math.PI * 2); ctx.fill();
+}
 
-      // 3. SOMBRERITO DE PAYASO ESCALADO
-      const headTop = landmarks[10];
-      drawClownHat(headTop.x * w, headTop.y * h - (30 * scale), isMouthOpen, scale);
-    }
+function drawNose(lm) {
+  const n = L(lm[1]);
+  const r = 24 + openness * 5;
+  ctx.fillStyle = "rgba(0,0,0,.25)";
+  ctx.beginPath(); ctx.ellipse(n.x + 3, n.y + r * .85, r * .8, r * .25, 0, 0, Math.PI * 2); ctx.fill();
+  ball(n.x, n.y, r, "#ff6b6b", "#c4001d");
+  ctx.fillStyle = "rgba(255,255,255,.9)";
+  ctx.beginPath(); ctx.ellipse(n.x - r * .35, n.y - r * .4, r * .28, r * .16, -.6, 0, Math.PI * 2); ctx.fill();
+}
 
-    function drawTriangle(x, y, width, height, direction, color) {
-      canvasCtx.fillStyle = color;
-      canvasCtx.beginPath();
-      if (direction === "up") {
-        canvasCtx.moveTo(x, y - height / 2);
-        canvasCtx.lineTo(x - width / 2, y + height / 2);
-        canvasCtx.lineTo(x + width / 2, y + height / 2);
-      } else {
-        canvasCtx.moveTo(x, y + height / 2);
-        canvasCtx.lineTo(x - width / 2, y - height / 2);
-        canvasCtx.lineTo(x + width / 2, y - height / 2);
-      }
-      canvasCtx.closePath();
-      canvasCtx.fill();
-    }
+function drawHat(lm, t) {
+  const top = L(lm[10]);
+  const pop = openness * 22;
+  ctx.save();
+  ctx.translate(top.x, top.y - 38 - pop);
+    const cone = () => { ctx.beginPath(); ctx.moveTo(-58, 0); ctx.lineTo(0, -150); ctx.lineTo(58, 0); ctx.closePath(); };
+  // base del cono
+  cone(); ctx.fillStyle = "#8e24ff"; ctx.fill();
+  // rayas diagonales
+  ctx.save(); cone(); ctx.clip();
+  ctx.fillStyle = "#ffd600";
+  for (let i = -4; i < 6; i++) {
+    ctx.beginPath(); ctx.moveTo(-90 + i * 36, 10); ctx.lineTo(-62 + i * 36, 10); ctx.lineTo(-22 + i * 36, -160); ctx.lineTo(-50 + i * 36, -160); ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = "#ff4fa3";
+  [[-24,-24],[22,-30],[-8,-62],[12,-90],[-4,-118]].forEach(([x, y]) => { ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fill(); });
+  ctx.restore();
+  cone(); ctx.strokeStyle = "#4a148c"; ctx.lineWidth = 3; ctx.lineJoin = "round"; ctx.stroke();
+  // pompón
+  ball(0, -156 + Math.sin(t * 2) * 3, 17, "#ffffff", "#ff9ad0");
+  ctx.restore();
+}
 
-    function drawClownHat(x, y, isOpen, scale) {
-      canvasCtx.save();
-      canvasCtx.translate(x, y);
-      canvasCtx.scale(scale, scale); // Escalar todo el sombrero proporcionalmente
+// ---------- Confeti ----------
+function burst(x, y, n) {
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI / 2 + (Math.random() - .5) * 2.2, v = Math.random() * 7 + 3;
+    particles.push({
+      x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+      w: Math.random() * 9 + 5, h: Math.random() * 5 + 3,
+      rot: Math.random() * 6, vr: (Math.random() - .5) * .4,
+      color: CONFETTI[(Math.random() * CONFETTI.length) | 0],
+      star: Math.random() < .25, alpha: 1
+    });
+  }
+}
 
-      canvasCtx.fillStyle = isOpen ? "#FFD700" : "#AA00FF";
-      canvasCtx.beginPath();
-      canvasCtx.ellipse(0, 10, 35, 8, 0, 0, Math.PI * 2);
-      canvasCtx.fill();
+function drawParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.vy += 0.22; p.vx *= 0.99;
+    p.x += p.vx; p.y += p.vy; p.rot += p.vr; p.alpha -= 0.012;
+    if (p.alpha <= 0 || p.y > H + 20) { particles.splice(i, 1); continue; }
+    ctx.save();
+    ctx.globalAlpha = p.alpha; ctx.fillStyle = p.color;
+    ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+    if (p.star) {
+      ctx.beginPath();
+      for (let k = 0; k < 10; k++) { const r = k % 2 ? p.w * .4 : p.w * .9, a = k * Math.PI / 5; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
+      ctx.closePath(); ctx.fill();
+    } else ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+    ctx.restore();
+  }
+}
 
-      canvasCtx.beginPath();
-      canvasCtx.moveTo(-20, 10);
-      canvasCtx.lineTo(-12, -35);
-      canvasCtx.lineTo(12, -35);
-      canvasCtx.lineTo(20, 10);
-      canvasCtx.closePath();
-      canvasCtx.fill();
+// ---------- Sonido: usa bocina.mp3 y, si no existe, sintetiza una bocina ----------
+const clownAudio = new Audio("bocina.mp3");
+function honk() {
+  clownAudio.currentTime = 0;
+  clownAudio.play().catch(() => synthHonk());
+}
+function synthHonk() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime, g = audioCtx.createGain();
+  g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.25, t + .02); g.gain.exponentialRampToValueAtTime(.0001, t + .35);
+  g.connect(audioCtx.destination);
+  [330, 392].forEach(f => {
+    const o = audioCtx.createOscillator(); o.type = "sawtooth";
+    o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * .8, t + .35);
+    o.connect(g); o.start(t); o.stop(t + .36);
+  });
+}
 
-      canvasCtx.fillStyle = "#FF4081";
-      canvasCtx.beginPath();
-      canvasCtx.arc(0, -40, 10, 0, Math.PI * 2);
-      canvasCtx.fill();
-      canvasCtx.restore();
-    }
-    // Cargar el archivo de audio al inicio
-    const clownAudio = new Audio('bocina.mp3');
-
-    function playClownSound() {
-      clownAudio.currentTime = 0; // Reiniciar audio por si se abre la boca rápido
-      clownAudio.play().catch(err => console.log("Audio prevenido por navegador", err));
-    }
-
-    function createMouthParticles(x, y) {
-      for (let i = 0; i < 3; i++) {
-        particles.push({
-          x: x,
-          y: y,
-          vx: (Math.random() - 0.5) * 4,
-          vy: Math.random() * -4 - 2,
-          size: Math.random() * 6 + 4,
-          color: `hsl(${Math.random() * 60 + 300}, 100%, 60%)`,
-          alpha: 1
-        });
-      }
-    }
-
-    function updateAndDrawParticles() {
-      for (let i = particles.length - 1; i >= 0; i--) {
-        let p = particles[i];
-        p.x += p.vx;
-        p.y += p.vy;
-        p.alpha -= 0.02;
-
-        if (p.alpha <= 0) {
-          particles.splice(i, 1);
-          continue;
-        }
-
-        canvasCtx.save();
-        canvasCtx.globalAlpha = p.alpha;
-        canvasCtx.fillStyle = p.color;
-        canvasCtx.beginPath();
-        canvasCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        canvasCtx.fill();
-        canvasCtx.restore();
-      }
-    }
-
-    initFaceLandmarker();
-  </script>
+init();
+</script>
 </body>
 </html>
