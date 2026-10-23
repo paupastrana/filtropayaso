@@ -264,30 +264,12 @@
       canvasCtx.fill();
       canvasCtx.restore();
     }
+    // Cargar el archivo de audio al inicio
+    const clownAudio = new Audio('bocina.mp3');
 
     function playClownSound() {
-      if (!audioCtx) return;
-      try {
-        [0, 0.12].forEach(delay => {
-          const osc = audioCtx.createOscillator();
-          const gain = audioCtx.createGain();
-          
-          osc.type = 'sawtooth';
-          osc.frequency.setValueAtTime(300, audioCtx.currentTime + delay);
-          osc.frequency.linearRampToValueAtTime(350, audioCtx.currentTime + delay + 0.08);
-
-          gain.gain.setValueAtTime(0.2, audioCtx.currentTime + delay);
-          gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + delay + 0.08);
-
-          osc.connect(gain);
-          gain.connect(audioCtx.destination);
-
-          osc.start(audioCtx.currentTime + delay);
-          osc.stop(audioCtx.currentTime + delay + 0.08);
-        });
-      } catch (e) {
-        console.log("Audio bloqueado", e);
-      }
+      clownAudio.currentTime = 0; // Reiniciar audio por si se abre la boca rápido
+      clownAudio.play().catch(err => console.log("Audio prevenido por navegador", err));
     }
 
     function createMouthParticles(x, y) {
