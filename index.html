@@ -23,6 +23,11 @@
   <video id="webcam" autoplay playsinline muted></video>
   <canvas id="output_canvas"></canvas>
 </div>
+<p id="hint">Abre la boca para hacer sonar la bocina y lanzar confeti.</p>
+<div class="row">
+  <button id="start-btn">¡Activar cámara!</button>
+  <button id="snap-btn" class="alt" style="display:none">Tomar foto</button>
+</div>
 
 <script type="module">
 import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
