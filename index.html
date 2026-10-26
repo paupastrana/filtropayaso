@@ -23,11 +23,6 @@
   <video id="webcam" autoplay playsinline muted></video>
   <canvas id="output_canvas"></canvas>
 </div>
-<p id="hint">Abre la boca para hacer sonar la bocina y lanzar confeti.</p>
-<div class="row">
-  <button id="start-btn">¡Activar cámara!</button>
-  <button id="snap-btn" class="alt" style="display:none">Tomar foto</button>
-</div>
 
 <script type="module">
 import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
@@ -289,11 +284,25 @@ function drawParticles() {
 }
 
 // ---------- Sonido: usa bocina.mp3 y, si no existe, sintetiza una bocina ----------
-const clownAudio = new Audio("bocina.mp3");
+
+const clownAudio = new Audio("/bocina.mp3");
+clownAudio.preload = "auto";
+clownAudio.volume = 1;
+
 function honk() {
+  clownAudio.pause();
   clownAudio.currentTime = 0;
-  clownAudio.play().catch(() => synthHonk());
+
+  clownAudio.play()
+    .then(() => {
+      console.log("Reproduciendo bocina.mp3");
+    })
+    .catch((error) => {
+      console.error("Falló bocina.mp3:", error);
+      // No activar synthHonk mientras comprobamos el problema
+    });
 }
+
 function synthHonk() {
   if (!audioCtx) return;
   const t = audioCtx.currentTime, g = audioCtx.createGain();
